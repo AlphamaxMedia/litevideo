@@ -255,7 +255,7 @@ class S7PhaseDetector(Module, AutoCSR):
 
 
 class S7DataCapture(Module, AutoCSR):
-    def __init__(self, pad_p, pad_n, ntbits=8):
+    def __init__(self, pad_p, pad_n, ntbits=8, iodelay_clk_freq=200e6):
         self.d = Signal(10)
 
         self._dly_ctl = CSR(5)
@@ -289,38 +289,72 @@ class S7DataCapture(Module, AutoCSR):
         serdes_m_q = Signal(8)
         serdes_m_d = Signal(8)
         serdes_m_cntvalue = Signal(5)
-        self.specials += [
-            Instance("IDELAYE2",
-                p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
-                p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="TRUE",
-                p_REFCLK_FREQUENCY=200.0, p_PIPE_SEL="FALSE",
-                p_IDELAY_TYPE="VARIABLE", p_IDELAY_VALUE=0,
+        if iodelay_clk_freq == 200e6:
+            self.specials += [
+                Instance("IDELAYE2",
+                    p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
+                    p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="TRUE",
+                    p_REFCLK_FREQUENCY=200.0, p_PIPE_SEL="FALSE",
+                    p_IDELAY_TYPE="VARIABLE", p_IDELAY_VALUE=0,
 
-                i_C=ClockSignal("pix1p25x"),
-                i_LD=delay_rst,
-                i_CE=delay_master_ce,
-                i_LDPIPEEN=0, i_INC=delay_master_inc,
+                    i_C=ClockSignal("pix1p25x"),
+                    i_LD=delay_rst,
+                    i_CE=delay_master_ce,
+                    i_LDPIPEEN=0, i_INC=delay_master_inc,
 
-                i_IDATAIN=serdes_m_i_nodelay, o_DATAOUT=serdes_m_i_delayed,
-                o_CNTVALUEOUT=serdes_m_cntvalue
-            ),
-            Instance("ISERDESE2",
-                p_DATA_WIDTH=8, p_DATA_RATE="DDR",
-                p_SERDES_MODE="MASTER", p_INTERFACE_TYPE="NETWORKING",
-                p_NUM_CE=1, p_IOBDELAY="IFD",
+                    i_IDATAIN=serdes_m_i_nodelay, o_DATAOUT=serdes_m_i_delayed,
+                    o_CNTVALUEOUT=serdes_m_cntvalue
+                ),
+                Instance("ISERDESE2",
+                    p_DATA_WIDTH=8, p_DATA_RATE="DDR",
+                    p_SERDES_MODE="MASTER", p_INTERFACE_TYPE="NETWORKING",
+                    p_NUM_CE=1, p_IOBDELAY="IFD",
 
-                i_DDLY=serdes_m_i_delayed,
-                i_CE1=1,
-                i_RST=ResetSignal("pix1p25x"),
-                i_CLK=ClockSignal("pix5x"), i_CLKB=~ClockSignal("pix5x"),
-                i_CLKDIV=ClockSignal("pix1p25x"),
-                i_BITSLIP=0,
-                o_Q8=serdes_m_q[0], o_Q7=serdes_m_q[1],
-                o_Q6=serdes_m_q[2], o_Q5=serdes_m_q[3],
-                o_Q4=serdes_m_q[4], o_Q3=serdes_m_q[5],
-                o_Q2=serdes_m_q[6], o_Q1=serdes_m_q[7]
-            ),
-        ]
+                    i_DDLY=serdes_m_i_delayed,
+                    i_CE1=1,
+                    i_RST=ResetSignal("pix1p25x"),
+                    i_CLK=ClockSignal("pix5x"), i_CLKB=~ClockSignal("pix5x"),
+                    i_CLKDIV=ClockSignal("pix1p25x"),
+                    i_BITSLIP=0,
+                    o_Q8=serdes_m_q[0], o_Q7=serdes_m_q[1],
+                    o_Q6=serdes_m_q[2], o_Q5=serdes_m_q[3],
+                    o_Q4=serdes_m_q[4], o_Q3=serdes_m_q[5],
+                    o_Q2=serdes_m_q[6], o_Q1=serdes_m_q[7]
+                ),
+            ]
+        else:
+            self.specials += [
+                Instance("IDELAYE2",
+                         p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
+                         p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="TRUE",
+                         p_REFCLK_FREQUENCY=400.0, p_PIPE_SEL="FALSE",
+                         p_IDELAY_TYPE="VARIABLE", p_IDELAY_VALUE=0,
+
+                         i_C=ClockSignal("pix1p25x"),
+                         i_LD=delay_rst,
+                         i_CE=delay_master_ce,
+                         i_LDPIPEEN=0, i_INC=delay_master_inc,
+
+                         i_IDATAIN=serdes_m_i_nodelay, o_DATAOUT=serdes_m_i_delayed,
+                         o_CNTVALUEOUT=serdes_m_cntvalue
+                         ),
+                Instance("ISERDESE2",
+                         p_DATA_WIDTH=8, p_DATA_RATE="DDR",
+                         p_SERDES_MODE="MASTER", p_INTERFACE_TYPE="NETWORKING",
+                         p_NUM_CE=1, p_IOBDELAY="IFD",
+
+                         i_DDLY=serdes_m_i_delayed,
+                         i_CE1=1,
+                         i_RST=ResetSignal("pix1p25x"),
+                         i_CLK=ClockSignal("pix5x"), i_CLKB=~ClockSignal("pix5x"),
+                         i_CLKDIV=ClockSignal("pix1p25x"),
+                         i_BITSLIP=0,
+                         o_Q8=serdes_m_q[0], o_Q7=serdes_m_q[1],
+                         o_Q6=serdes_m_q[2], o_Q5=serdes_m_q[3],
+                         o_Q4=serdes_m_q[4], o_Q3=serdes_m_q[5],
+                         o_Q2=serdes_m_q[6], o_Q1=serdes_m_q[7]
+                         ),
+            ]
 
         # slave serdes
         # idelay_value must be preloaded with a 90° phase shift but we
@@ -329,38 +363,72 @@ class S7DataCapture(Module, AutoCSR):
         serdes_s_q = Signal(8)
         serdes_s_d = Signal(8)
         serdes_s_cntvalue = Signal(5)
-        self.specials += [
-            Instance("IDELAYE2",
-                p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
-                p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="TRUE",
-                p_REFCLK_FREQUENCY=200.0, p_PIPE_SEL="FALSE",
-                p_IDELAY_TYPE="VARIABLE", p_IDELAY_VALUE=0,
+        if iodelay_clk_freq == 200e6:
+            self.specials += [
+                Instance("IDELAYE2",
+                    p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
+                    p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="TRUE",
+                    p_REFCLK_FREQUENCY=200.0, p_PIPE_SEL="FALSE",
+                    p_IDELAY_TYPE="VARIABLE", p_IDELAY_VALUE=0,
 
-                i_C=ClockSignal("pix1p25x"),
-                i_LD=delay_rst,
-                i_CE=delay_slave_ce,
-                i_LDPIPEEN=0, i_INC=delay_slave_inc,
+                    i_C=ClockSignal("pix1p25x"),
+                    i_LD=delay_rst,
+                    i_CE=delay_slave_ce,
+                    i_LDPIPEEN=0, i_INC=delay_slave_inc,
 
-                i_IDATAIN=serdes_s_i_nodelay, o_DATAOUT=serdes_s_i_delayed,
-                o_CNTVALUEOUT=serdes_s_cntvalue
-            ),
-            Instance("ISERDESE2",
-                p_DATA_WIDTH=8, p_DATA_RATE="DDR",
-                p_SERDES_MODE="MASTER", p_INTERFACE_TYPE="NETWORKING",
-                p_NUM_CE=1, p_IOBDELAY="IFD",
+                    i_IDATAIN=serdes_s_i_nodelay, o_DATAOUT=serdes_s_i_delayed,
+                    o_CNTVALUEOUT=serdes_s_cntvalue
+                ),
+                Instance("ISERDESE2",
+                    p_DATA_WIDTH=8, p_DATA_RATE="DDR",
+                    p_SERDES_MODE="MASTER", p_INTERFACE_TYPE="NETWORKING",
+                    p_NUM_CE=1, p_IOBDELAY="IFD",
 
-                i_DDLY=serdes_s_i_delayed,
-                i_CE1=1,
-                i_RST=ResetSignal("pix1p25x"),
-                i_CLK=ClockSignal("pix5x"), i_CLKB=~ClockSignal("pix5x"),
-                i_CLKDIV=ClockSignal("pix1p25x"),
-                i_BITSLIP=0,
-                o_Q8=serdes_s_q[0], o_Q7=serdes_s_q[1],
-                o_Q6=serdes_s_q[2], o_Q5=serdes_s_q[3],
-                o_Q4=serdes_s_q[4], o_Q3=serdes_s_q[5],
-                o_Q2=serdes_s_q[6], o_Q1=serdes_s_q[7]
-            ),
-        ]
+                    i_DDLY=serdes_s_i_delayed,
+                    i_CE1=1,
+                    i_RST=ResetSignal("pix1p25x"),
+                    i_CLK=ClockSignal("pix5x"), i_CLKB=~ClockSignal("pix5x"),
+                    i_CLKDIV=ClockSignal("pix1p25x"),
+                    i_BITSLIP=0,
+                    o_Q8=serdes_s_q[0], o_Q7=serdes_s_q[1],
+                    o_Q6=serdes_s_q[2], o_Q5=serdes_s_q[3],
+                    o_Q4=serdes_s_q[4], o_Q3=serdes_s_q[5],
+                    o_Q2=serdes_s_q[6], o_Q1=serdes_s_q[7]
+                ),
+            ]
+        else:
+            self.specials += [
+                Instance("IDELAYE2",
+                         p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
+                         p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="TRUE",
+                         p_REFCLK_FREQUENCY=400.0, p_PIPE_SEL="FALSE",
+                         p_IDELAY_TYPE="VARIABLE", p_IDELAY_VALUE=0,
+
+                         i_C=ClockSignal("pix1p25x"),
+                         i_LD=delay_rst,
+                         i_CE=delay_slave_ce,
+                         i_LDPIPEEN=0, i_INC=delay_slave_inc,
+
+                         i_IDATAIN=serdes_s_i_nodelay, o_DATAOUT=serdes_s_i_delayed,
+                         o_CNTVALUEOUT=serdes_s_cntvalue
+                         ),
+                Instance("ISERDESE2",
+                         p_DATA_WIDTH=8, p_DATA_RATE="DDR",
+                         p_SERDES_MODE="MASTER", p_INTERFACE_TYPE="NETWORKING",
+                         p_NUM_CE=1, p_IOBDELAY="IFD",
+
+                         i_DDLY=serdes_s_i_delayed,
+                         i_CE1=1,
+                         i_RST=ResetSignal("pix1p25x"),
+                         i_CLK=ClockSignal("pix5x"), i_CLKB=~ClockSignal("pix5x"),
+                         i_CLKDIV=ClockSignal("pix1p25x"),
+                         i_BITSLIP=0,
+                         o_Q8=serdes_s_q[0], o_Q7=serdes_s_q[1],
+                         o_Q6=serdes_s_q[2], o_Q5=serdes_s_q[3],
+                         o_Q4=serdes_s_q[4], o_Q3=serdes_s_q[5],
+                         o_Q2=serdes_s_q[6], o_Q1=serdes_s_q[7]
+                         ),
+            ]
 
         # cntvalue sync
         self.submodules.sync_mcntvalue = BusSynchronizer(5, "pix1p25x", "sys")
