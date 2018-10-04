@@ -95,7 +95,7 @@ class HDMIIn(Module, AutoCSR):
                 self.decode_terc4.data_in2.eq(self.chansync.data_out2),
             ]
 
-            self.submodules.syncpol = SyncPolarity(hdmi)
+            self.submodules.syncpol = SyncPolarity(hdmi, split_mmcm)
             self.comb += self.syncpol.de_int.eq(self.decode_terc4.de_o) # manually wire up the fancy de signal in case hdmi is True
 
             # delay the rest of the signals to match the time it took to derive the fancy de signal
@@ -123,7 +123,7 @@ class HDMIIn(Module, AutoCSR):
             ]
 
         else:
-            self.submodules.syncpol = SyncPolarity()
+            self.submodules.syncpol = SyncPolarity(hdmi, split_mmcm)
             self.comb += [
                 self.syncpol.valid_i.eq(self.chansync.chan_synced),
                 self.syncpol.data_in0.eq(self.chansync.data_out0),

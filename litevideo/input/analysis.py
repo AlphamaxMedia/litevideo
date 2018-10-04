@@ -10,7 +10,7 @@ from litevideo.csc.ycbcr444to422 import YCbCr444to422
 
 
 class SyncPolarity(Module):
-    def __init__(self, hdmi=False):
+    def __init__(self, hdmi=False, split_mmcm=False):
         self.valid_i = Signal()
         self.data_in0 = Record(channel_layout)
         self.data_in1 = Record(channel_layout)
@@ -63,12 +63,13 @@ class SyncPolarity(Module):
             )
         ]
 
-        # move this to a retimed output domain
-        self.sync.pix_o += [
-            self.c0.eq(self.data_in0.raw),
-            self.c1.eq(self.data_in1.raw),
-            self.c2.eq(self.data_in2.raw),
-        ]
+        if split_mmcm:
+            # move this to a retimed output domain
+            self.sync.pix_o += [
+                self.c0.eq(self.data_in0.raw),
+                self.c1.eq(self.data_in1.raw),
+                self.c2.eq(self.data_in2.raw),
+            ]
 
 
 class ResolutionDetection(Module, AutoCSR):
