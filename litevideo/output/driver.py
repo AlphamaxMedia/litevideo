@@ -58,6 +58,6 @@ class Driver(Module, AutoCSR):
             self.comb += sink.connect(self.vga_phy.sink)
         else:
             self.submodules.hdmi_phy = hdmi_phy_cls[family](pads, mode)
+            self.comb += sink.connect(self.hdmi_phy.sink)
             if hasattr(self.hdmi_phy, "serdesstrobe"):
                 self.comb += self.hdmi_phy.serdesstrobe.eq(self.clocking.serdesstrobe)
-                self.comb += sink.connect(self.hdmi_phy.sink)
