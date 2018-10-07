@@ -103,7 +103,7 @@ class S7HDMIOutClocking(Module, AutoCSR):
 
                 # VCO
                 p_REF_JITTER1=0.01, p_CLKIN1_PERIOD=10.0,
-                p_CLKFBOUT_MULT_F=37.125, p_CLKFBOUT_PHASE=0.000, p_DIVCLK_DIVIDE=5,
+                p_CLKFBOUT_MULT_F=22.250, p_CLKFBOUT_PHASE=0.000, p_DIVCLK_DIVIDE=3,
                 i_CLKIN1=ClockSignal("clk100"), i_CLKFBIN=mmcm_fb, o_CLKFBOUT=mmcm_fb,
 
                 # CLK0
