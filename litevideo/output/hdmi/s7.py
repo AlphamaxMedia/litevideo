@@ -98,18 +98,18 @@ class S7HDMIOutClocking(Module, AutoCSR):
 
         self.specials += [
             Instance("MMCME2_ADV",
-                p_BANDWIDTH="OPTIMIZED",
+                p_BANDWIDTH="HIGH", # high minimizes output jitter, low maximizes input jitter filtering
                 i_RST=self._mmcm_reset.storage, o_LOCKED=mmcm_locked,
 
                 # VCO
                 p_REF_JITTER1=0.01, p_CLKIN1_PERIOD=10.0,
-                p_CLKFBOUT_MULT_F=22.250, p_CLKFBOUT_PHASE=0.000, p_DIVCLK_DIVIDE=3,
+                p_CLKFBOUT_MULT_F=37.125, p_CLKFBOUT_PHASE=0.000, p_DIVCLK_DIVIDE=5,
                 i_CLKIN1=ClockSignal("clk100"), i_CLKFBIN=mmcm_fb, o_CLKFBOUT=mmcm_fb,
 
                 # CLK0
-                p_CLKOUT0_DIVIDE_F=5.0, p_CLKOUT0_PHASE=0.000, o_CLKOUT0=mmcm_clk0,
+                p_CLKOUT0_DIVIDE_F=10.0, p_CLKOUT0_PHASE=0.000, o_CLKOUT0=mmcm_clk0,
                 # CLK1
-                p_CLKOUT1_DIVIDE=1, p_CLKOUT1_PHASE=0.000, o_CLKOUT1=mmcm_clk1,
+                p_CLKOUT1_DIVIDE=2, p_CLKOUT1_PHASE=0.000, o_CLKOUT1=mmcm_clk1,
 
                 # DRP
                 i_DCLK=ClockSignal(),

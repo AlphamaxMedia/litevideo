@@ -238,8 +238,6 @@ class S7PhaseDetector(Module, AutoCSR):
         # on mdata transition, mdata == sdata
 
         transition = Signal()
-        inc = Signal()
-        dec = Signal()
 
         # find transition
         mdata_d = Signal(8)
@@ -263,6 +261,7 @@ class S7DataCapture(Module, AutoCSR):
         self._phase_reset = CSR()
         self._cntvalueout_m = CSRStatus(5)
         self._cntvalueout_s = CSRStatus(5)
+        self._lateness = CSRStatus(ntbits)
 
         # # #
 
@@ -469,6 +468,11 @@ class S7DataCapture(Module, AutoCSR):
 
         # phase error accumulator
         lateness = Signal(ntbits, reset=2**(ntbits - 1))
+        self.submodules.sync_lateness = BusSynchronizer(ntbits, "pix1p25x", "sys") # hook up lateness for debug output
+        self.comb += [
+            self.sync_lateness.i.eq(lateness),
+            self._lateness.status.eq(self.sync_lateness.o),
+        ]
         too_late = Signal()
         too_early = Signal()
         reset_lateness = Signal()
