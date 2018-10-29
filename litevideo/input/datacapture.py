@@ -331,8 +331,9 @@ class S7DataCapture(Module, AutoCSR):
                alg_serdes_m_cntvalue_in.eq(serdes_m_cntvalue_in),
                If(auto_ctl[3],
                   alg_bitslip.eq(bitslip),
-                  alg_bitslip.eq(0),
-                )
+                ).Else(
+                  alg_bitslip.eq(0)
+               )
             ).Else(
                 alg_delay_rst.eq(delay_rst),
                 alg_delay_master_ce.eq(delay_master_ce),
@@ -500,7 +501,6 @@ class S7DataCapture(Module, AutoCSR):
                 self._monitor.status.eq(self.sync_result.o),
             ]
 
-            search_again_sync = Signal()
             self.submodules.do_search_again = PulseSynchronizer("sys", "pix")
             self.comb += [
                 self.do_search_again.i.eq(self._auto_ctl.re & self._auto_ctl.storage[4])
