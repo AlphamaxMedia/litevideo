@@ -211,6 +211,7 @@ class S7PhaseDetector(Module, AutoCSR):
 
         self.inc = Signal()
         self.dec = Signal()
+        self.unsure = Signal()
 
         # # #
 
@@ -238,8 +239,6 @@ class S7PhaseDetector(Module, AutoCSR):
         # on mdata transition, mdata == sdata
 
         transition = Signal()
-        inc = Signal()
-        dec = Signal()
 
         # find transition
         mdata_d = Signal(8)
@@ -250,12 +249,13 @@ class S7PhaseDetector(Module, AutoCSR):
         # find what to do
         self.comb += [
             self.inc.eq(transition & (self.mdata == self.sdata)),
-            self.dec.eq(transition & (self.mdata != self.sdata))
+            self.dec.eq(transition & (mdata_d == self.sdata)),
+            self.unsure.eq(transition & (self.mdata != self.sdata)),
         ]
 
 
 class S7DataCapture(Module, AutoCSR):
-    def __init__(self, pad_p, pad_n, ntbits=8, iodelay_clk_freq=200e6):
+    def __init__(self, pad_p, pad_n, ntbits=8, iodelay_clk_freq=200e6, alt_delay=False):
         self.d = Signal(10)
 
         self._dly_ctl = CSR(5)
@@ -263,6 +263,11 @@ class S7DataCapture(Module, AutoCSR):
         self._phase_reset = CSR()
         self._cntvalueout_m = CSRStatus(5)
         self._cntvalueout_s = CSRStatus(5)
+        self._lateness = CSRStatus(ntbits)
+        self._algorithm = CSRStorage(2)
+        self._eye = CSRStatus(32)
+        self._monitor = CSRStatus(32)
+        self._auto_ctl = CSRStorage(5)
 
         # # #
 
@@ -278,6 +283,29 @@ class S7DataCapture(Module, AutoCSR):
             )
         ]
 
+        # auto_ctl:
+        #  0 = enable_phase_detector
+        #  1 = enable_monitor
+        #  2 = delay_mech select
+        #  3 = enable bitslip controller
+        #  4 = search again
+        auto_ctl = Signal(self._auto_ctl.size)
+        self.submodules.sync_auto_ctl = BusSynchronizer(self._auto_ctl.size, "sys", "pix1p25x")
+        self.comb += [
+            self.sync_auto_ctl.i.eq(self._auto_ctl.storage),
+            auto_ctl.eq(self.sync_auto_ctl.o)
+        ]
+
+        # algorithm:
+        # 0 = original
+        # 1 = delay criteria mod on original
+        # 2 = fully autonomous
+        algo = Signal(2)
+        self.specials += MultiReg(self._algorithm.storage, algo, odomain="pix1p25x")
+
+        bitslip = Signal()
+        alg_bitslip=Signal()
+
         delay_rst = Signal()
         delay_master_inc = Signal()
         delay_master_ce = Signal()
@@ -289,72 +317,65 @@ class S7DataCapture(Module, AutoCSR):
         serdes_m_q = Signal(8)
         serdes_m_d = Signal(8)
         serdes_m_cntvalue = Signal(5)
-        if iodelay_clk_freq == 200e6:
-            self.specials += [
-                Instance("IDELAYE2",
-                    p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
-                    p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="TRUE",
-                    p_REFCLK_FREQUENCY=200.0, p_PIPE_SEL="FALSE",
-                    p_IDELAY_TYPE="VARIABLE", p_IDELAY_VALUE=0,
+        serdes_m_cntvalue_in = Signal(5)
+        alg_serdes_m_cntvalue_in = Signal(5)
 
-                    i_C=ClockSignal("pix1p25x"),
-                    i_LD=delay_rst,
-                    i_CE=delay_master_ce,
-                    i_LDPIPEEN=0, i_INC=delay_master_inc,
+        alg_delay_rst = Signal()
+        alg_delay_master_ce = Signal()
+        alg_delay_master_inc = Signal()
+        self.comb += [
+            If(algo[1],
+               alg_delay_rst.eq(1),
+               alg_delay_master_ce.eq(0),
+               alg_delay_master_inc.eq(0),
+               alg_serdes_m_cntvalue_in.eq(serdes_m_cntvalue_in),
+               If(auto_ctl[3],
+                  alg_bitslip.eq(bitslip),
+                  alg_bitslip.eq(0),
+                )
+            ).Else(
+                alg_delay_rst.eq(delay_rst),
+                alg_delay_master_ce.eq(delay_master_ce),
+                alg_delay_master_inc.eq(delay_master_inc),
+                alg_serdes_m_cntvalue_in.eq(0),
+                alg_bitslip.eq(0)
+            )
+        ]
 
-                    i_IDATAIN=serdes_m_i_nodelay, o_DATAOUT=serdes_m_i_delayed,
-                    o_CNTVALUEOUT=serdes_m_cntvalue
-                ),
-                Instance("ISERDESE2",
-                    p_DATA_WIDTH=8, p_DATA_RATE="DDR",
-                    p_SERDES_MODE="MASTER", p_INTERFACE_TYPE="NETWORKING",
-                    p_NUM_CE=1, p_IOBDELAY="IFD",
+        self.specials += [
+            Instance("IDELAYE2",
+                     p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
+                     p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="TRUE",
+                     p_REFCLK_FREQUENCY=iodelay_clk_freq / 1e6, p_PIPE_SEL="FALSE",
+                     p_IDELAY_TYPE="VAR_LOAD", p_IDELAY_VALUE=0,
 
-                    i_DDLY=serdes_m_i_delayed,
-                    i_CE1=1,
-                    i_RST=ResetSignal("pix1p25x"),
-                    i_CLK=ClockSignal("pix5x"), i_CLKB=~ClockSignal("pix5x"),
-                    i_CLKDIV=ClockSignal("pix1p25x"),
-                    i_BITSLIP=0,
-                    o_Q8=serdes_m_q[0], o_Q7=serdes_m_q[1],
-                    o_Q6=serdes_m_q[2], o_Q5=serdes_m_q[3],
-                    o_Q4=serdes_m_q[4], o_Q3=serdes_m_q[5],
-                    o_Q2=serdes_m_q[6], o_Q1=serdes_m_q[7]
-                ),
-            ]
-        else:
-            self.specials += [
-                Instance("IDELAYE2",
-                         p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
-                         p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="TRUE",
-                         p_REFCLK_FREQUENCY=400.0, p_PIPE_SEL="FALSE",
-                         p_IDELAY_TYPE="VARIABLE", p_IDELAY_VALUE=0,
+                     i_C=ClockSignal("pix1p25x"),
+                     i_LD=alg_delay_rst,
+                     i_CE=alg_delay_master_ce,
+                     i_LDPIPEEN=0,
+                     i_INC=alg_delay_master_inc,
 
-                         i_C=ClockSignal("pix1p25x"),
-                         i_LD=delay_rst,
-                         i_CE=delay_master_ce,
-                         i_LDPIPEEN=0, i_INC=delay_master_inc,
+                     i_CNTVALUEIN=alg_serdes_m_cntvalue_in,
+                     i_IDATAIN=serdes_m_i_nodelay, o_DATAOUT=serdes_m_i_delayed,
+                     o_CNTVALUEOUT=serdes_m_cntvalue
+                     ),
+            Instance("ISERDESE2",
+                     p_DATA_WIDTH=8, p_DATA_RATE="DDR",
+                     p_SERDES_MODE="MASTER", p_INTERFACE_TYPE="NETWORKING",
+                     p_NUM_CE=1, p_IOBDELAY="IFD",
 
-                         i_IDATAIN=serdes_m_i_nodelay, o_DATAOUT=serdes_m_i_delayed,
-                         o_CNTVALUEOUT=serdes_m_cntvalue
-                         ),
-                Instance("ISERDESE2",
-                         p_DATA_WIDTH=8, p_DATA_RATE="DDR",
-                         p_SERDES_MODE="MASTER", p_INTERFACE_TYPE="NETWORKING",
-                         p_NUM_CE=1, p_IOBDELAY="IFD",
-
-                         i_DDLY=serdes_m_i_delayed,
-                         i_CE1=1,
-                         i_RST=ResetSignal("pix1p25x"),
-                         i_CLK=ClockSignal("pix5x"), i_CLKB=~ClockSignal("pix5x"),
-                         i_CLKDIV=ClockSignal("pix1p25x"),
-                         i_BITSLIP=0,
-                         o_Q8=serdes_m_q[0], o_Q7=serdes_m_q[1],
-                         o_Q6=serdes_m_q[2], o_Q5=serdes_m_q[3],
-                         o_Q4=serdes_m_q[4], o_Q3=serdes_m_q[5],
-                         o_Q2=serdes_m_q[6], o_Q1=serdes_m_q[7]
-                         ),
-            ]
+                     i_DDLY=serdes_m_i_delayed,
+                     i_CE1=1,
+                     i_RST=ResetSignal("pix1p25x"),
+                     i_CLK=ClockSignal("pix5x"), i_CLKB=~ClockSignal("pix5x"),
+                     i_CLKDIV=ClockSignal("pix1p25x"),
+                     i_BITSLIP= alg_bitslip,
+                     o_Q8=serdes_m_q[0], o_Q7=serdes_m_q[1],
+                     o_Q6=serdes_m_q[2], o_Q5=serdes_m_q[3],
+                     o_Q4=serdes_m_q[4], o_Q3=serdes_m_q[5],
+                     o_Q2=serdes_m_q[6], o_Q1=serdes_m_q[7]
+                     ),
+        ]
 
         # slave serdes
         # idelay_value must be preloaded with a 90° phase shift but we
@@ -363,72 +384,137 @@ class S7DataCapture(Module, AutoCSR):
         serdes_s_q = Signal(8)
         serdes_s_d = Signal(8)
         serdes_s_cntvalue = Signal(5)
-        if iodelay_clk_freq == 200e6:
-            self.specials += [
-                Instance("IDELAYE2",
-                    p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
-                    p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="TRUE",
-                    p_REFCLK_FREQUENCY=200.0, p_PIPE_SEL="FALSE",
-                    p_IDELAY_TYPE="VARIABLE", p_IDELAY_VALUE=0,
+        serdes_s_cntvalue_in = Signal(5)
+        alg_serdes_s_cntvalue_in = Signal(5)
 
-                    i_C=ClockSignal("pix1p25x"),
-                    i_LD=delay_rst,
-                    i_CE=delay_slave_ce,
-                    i_LDPIPEEN=0, i_INC=delay_slave_inc,
+        alg_delay_slave_ce = Signal()
+        alg_delay_slave_inc = Signal()
+        self.comb += [
+            If(algo[1],
+               alg_delay_slave_ce.eq(0),
+               alg_delay_slave_inc.eq(0),
+               alg_serdes_s_cntvalue_in.eq(serdes_s_cntvalue_in)
+            ).Else(
+                alg_delay_slave_ce.eq(delay_slave_ce),
+                alg_delay_slave_inc.eq(delay_slave_inc),
+                alg_serdes_s_cntvalue_in.eq(0)
+            )
+        ]
+        self.specials += [
+            Instance("IDELAYE2",
+                     p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
+                     p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="TRUE",
+                     p_REFCLK_FREQUENCY=iodelay_clk_freq / 1e6, p_PIPE_SEL="FALSE",
+                     p_IDELAY_TYPE="VAR_LOAD", p_IDELAY_VALUE=0,
 
-                    i_IDATAIN=serdes_s_i_nodelay, o_DATAOUT=serdes_s_i_delayed,
-                    o_CNTVALUEOUT=serdes_s_cntvalue
-                ),
-                Instance("ISERDESE2",
-                    p_DATA_WIDTH=8, p_DATA_RATE="DDR",
-                    p_SERDES_MODE="MASTER", p_INTERFACE_TYPE="NETWORKING",
-                    p_NUM_CE=1, p_IOBDELAY="IFD",
+                     i_C=ClockSignal("pix1p25x"),
+                     i_LD=alg_delay_rst,
+                     i_CE=alg_delay_slave_ce,
+                     i_LDPIPEEN=0, i_INC=alg_delay_slave_inc,
 
-                    i_DDLY=serdes_s_i_delayed,
-                    i_CE1=1,
-                    i_RST=ResetSignal("pix1p25x"),
-                    i_CLK=ClockSignal("pix5x"), i_CLKB=~ClockSignal("pix5x"),
-                    i_CLKDIV=ClockSignal("pix1p25x"),
-                    i_BITSLIP=0,
-                    o_Q8=serdes_s_q[0], o_Q7=serdes_s_q[1],
-                    o_Q6=serdes_s_q[2], o_Q5=serdes_s_q[3],
-                    o_Q4=serdes_s_q[4], o_Q3=serdes_s_q[5],
-                    o_Q2=serdes_s_q[6], o_Q1=serdes_s_q[7]
-                ),
+                     i_CNTVALUEIN=alg_serdes_s_cntvalue_in,
+                     i_IDATAIN=~serdes_s_i_nodelay, o_DATAOUT=serdes_s_i_delayed,
+                     o_CNTVALUEOUT=serdes_s_cntvalue
+                     ),
+            Instance("ISERDESE2",
+                     p_DATA_WIDTH=8, p_DATA_RATE="DDR",
+                     p_SERDES_MODE="MASTER", p_INTERFACE_TYPE="NETWORKING",
+                     p_NUM_CE=1, p_IOBDELAY="IFD",
+
+                     i_DDLY=serdes_s_i_delayed,
+                     i_CE1=1,
+                     i_RST=ResetSignal("pix1p25x"),
+                     i_CLK=ClockSignal("pix5x"), i_CLKB=~ClockSignal("pix5x"),
+                     i_CLKDIV=ClockSignal("pix1p25x"),
+                     i_BITSLIP=alg_bitslip,
+                     o_Q8=serdes_s_q[0], o_Q7=serdes_s_q[1],
+                     o_Q6=serdes_s_q[2], o_Q5=serdes_s_q[3],
+                     o_Q4=serdes_s_q[4], o_Q3=serdes_s_q[5],
+                     o_Q2=serdes_s_q[6], o_Q1=serdes_s_q[7]
+                     ),
+        ]
+
+
+        alt_delay_data_out=Signal(8)
+        alt_delay_data_out_inv = Signal(8)
+        # polarity
+        if hasattr(pad_p, "inverted"):
+            self.comb += [
+                serdes_m_d.eq(~serdes_m_q),
+                serdes_s_d.eq(~serdes_s_q),
+                alt_delay_data_out_inv.eq(~alt_delay_data_out)
             ]
         else:
-            self.specials += [
-                Instance("IDELAYE2",
-                         p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
-                         p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="TRUE",
-                         p_REFCLK_FREQUENCY=400.0, p_PIPE_SEL="FALSE",
-                         p_IDELAY_TYPE="VARIABLE", p_IDELAY_VALUE=0,
-
-                         i_C=ClockSignal("pix1p25x"),
-                         i_LD=delay_rst,
-                         i_CE=delay_slave_ce,
-                         i_LDPIPEEN=0, i_INC=delay_slave_inc,
-
-                         i_IDATAIN=serdes_s_i_nodelay, o_DATAOUT=serdes_s_i_delayed,
-                         o_CNTVALUEOUT=serdes_s_cntvalue
-                         ),
-                Instance("ISERDESE2",
-                         p_DATA_WIDTH=8, p_DATA_RATE="DDR",
-                         p_SERDES_MODE="MASTER", p_INTERFACE_TYPE="NETWORKING",
-                         p_NUM_CE=1, p_IOBDELAY="IFD",
-
-                         i_DDLY=serdes_s_i_delayed,
-                         i_CE1=1,
-                         i_RST=ResetSignal("pix1p25x"),
-                         i_CLK=ClockSignal("pix5x"), i_CLKB=~ClockSignal("pix5x"),
-                         i_CLKDIV=ClockSignal("pix1p25x"),
-                         i_BITSLIP=0,
-                         o_Q8=serdes_s_q[0], o_Q7=serdes_s_q[1],
-                         o_Q6=serdes_s_q[2], o_Q5=serdes_s_q[3],
-                         o_Q4=serdes_s_q[4], o_Q3=serdes_s_q[5],
-                         o_Q2=serdes_s_q[6], o_Q1=serdes_s_q[7]
-                         ),
+            self.comb += [
+                serdes_m_d.eq(serdes_m_q),
+                serdes_s_d.eq(serdes_s_q),
+                alt_delay_data_out_inv.eq(alt_delay_data_out)
             ]
+
+        # datapath
+        self.submodules.gearbox = Gearbox(8, "pix1p25x", 10, "pix")
+        self.comb += [
+            If(algo[1],
+               self.gearbox.i.eq(alt_delay_data_out_inv),
+            ).Else(
+               self.gearbox.i.eq(serdes_m_d),
+            ),
+            self.d.eq(self.gearbox.o)
+        ]
+
+
+        self._eye_bit_time=CSRStorage(5)
+        self.submodules.sync_eye_bit_time = BusSynchronizer(5, "sys", "pix1p25x")
+        eye_bit_time_sync=Signal(5)
+        self.comb += [
+            self.sync_eye_bit_time.i.eq(self._eye_bit_time.storage),
+            eye_bit_time_sync.eq(self.sync_eye_bit_time.o)
+        ]
+        if alt_delay:
+            eye_result=Signal(32)
+            delay_result=Signal(32)
+            self.specials += [
+                Instance("delay_controller",
+                         # p_S = 8,
+                         i_m_datain=serdes_m_q,
+                         i_s_datain=serdes_s_q,
+                         i_enable_phase_detector=auto_ctl[0],
+                         i_enable_monitor=auto_ctl[1],
+                         i_del_mech=auto_ctl[2],
+                         i_reset=ResetSignal("pix1p25x"),
+                         i_clk=ClockSignal("pix1p25x"),
+                         o_m_delay_out=serdes_m_cntvalue_in,
+                         o_s_delay_out=serdes_s_cntvalue_in,
+                         o_data_out=alt_delay_data_out,
+                         i_bt_val=eye_bit_time_sync,
+                         o_results=eye_result,
+                         o_m_delay_1hot=delay_result,
+                         )
+            ]
+            self.submodules.sync_eye = BusSynchronizer(32, "pix1p25x", "sys")
+            self.submodules.sync_result = BusSynchronizer(32, "pix1p25x", "sys")
+            self.comb += [
+                self.sync_eye.i.eq(eye_result),
+                self._eye.status.eq(self.sync_eye.o),
+                self.sync_result.i.eq(delay_result),
+                self._monitor.status.eq(self.sync_result.o),
+            ]
+
+            search_again_sync = Signal()
+            self.submodules.do_search_again = PulseSynchronizer("sys", "pix")
+            self.comb += [
+                self.do_search_again.i.eq(self._auto_ctl.re & self._auto_ctl.storage[4])
+            ]
+            self.specials += [
+                Instance("phsaligner",
+                         i_clk=ClockSignal("pix"),
+                         i_rst=ResetSignal("pix"),
+                         i_sdata=self.gearbox.o,
+                         o_bitslip=bitslip,
+                         i_search_again=self.do_search_again.o
+                         )
+            ]
+
 
         # cntvalue sync
         self.submodules.sync_mcntvalue = BusSynchronizer(5, "pix1p25x", "sys")
@@ -438,25 +524,6 @@ class S7DataCapture(Module, AutoCSR):
             self._cntvalueout_m.status.eq(self.sync_mcntvalue.o),
             self.sync_scntvalue.i.eq(serdes_s_cntvalue),
             self._cntvalueout_s.status.eq(self.sync_scntvalue.o),
-        ]
-
-        # polarity
-        if hasattr(pad_p, "inverted"):
-            self.comb += [
-                serdes_m_d.eq(~serdes_m_q),
-                serdes_s_d.eq(serdes_s_q)
-            ]
-        else:
-            self.comb += [
-                serdes_m_d.eq(serdes_m_q),
-                serdes_s_d.eq(~serdes_s_q)
-            ]
-
-        # datapath
-        self.submodules.gearbox = Gearbox(8, "pix1p25x", 10, "pix")
-        self.comb += [
-            self.gearbox.i.eq(serdes_m_d),
-            self.d.eq(self.gearbox.o)
         ]
 
         # phase detector
@@ -480,9 +547,20 @@ class S7DataCapture(Module, AutoCSR):
             If(reset_lateness,
                 lateness.eq(2**(ntbits - 1))
             ).Elif(~too_late & ~too_early,
-                If(self.phase_detector.dec, lateness.eq(lateness + 1)),
-                If(self.phase_detector.inc, lateness.eq(lateness - 1))
+                If(algo[0],
+                   If(self.phase_detector.dec, lateness.eq(lateness + 1)),
+                   If(self.phase_detector.inc, lateness.eq(lateness - 1))
+                ).Else(
+                   If(self.phase_detector.unsure, lateness.eq(lateness + 1)),
+                   If(self.phase_detector.inc, lateness.eq(lateness - 1))
+                )
             )
+        ]
+
+        self.submodules.sync_lateness = BusSynchronizer(ntbits, "pix1p25x", "sys")
+        self.comb += [
+            self.sync_lateness.i.eq(lateness),
+            self._lateness.status.eq(self.sync_lateness.o),
         ]
 
         # delay control
@@ -508,7 +586,7 @@ class S7DataCapture(Module, AutoCSR):
         ]
 
         # phase detector control
-        self.specials += MultiReg(Cat(too_late, too_early), self._phase.status)
+        self.specials += MultiReg(Cat(too_late, too_early, self.phase_detector.unsure), self._phase.status)
         self.submodules.do_reset_lateness = PulseSynchronizer("sys", "pix1p25x")
         self.comb += [
             reset_lateness.eq(self.do_reset_lateness.o),
