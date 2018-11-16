@@ -326,7 +326,7 @@ class S7DataCapture(Module, AutoCSR):
                 Instance("IDELAYE2",
                          p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
                          p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="TRUE",
-                         p_REFCLK_FREQUENCY=400.0, p_PIPE_SEL="FALSE",
+                         p_REFCLK_FREQUENCY=(iodelay_clk_freq)/1e6, p_PIPE_SEL="FALSE",
                          p_IDELAY_TYPE="VARIABLE", p_IDELAY_VALUE=0,
 
                          i_C=ClockSignal("pix1p25x"),
@@ -400,7 +400,7 @@ class S7DataCapture(Module, AutoCSR):
                 Instance("IDELAYE2",
                          p_DELAY_SRC="IDATAIN", p_SIGNAL_PATTERN="DATA",
                          p_CINVCTRL_SEL="FALSE", p_HIGH_PERFORMANCE_MODE="TRUE",
-                         p_REFCLK_FREQUENCY=400.0, p_PIPE_SEL="FALSE",
+                         p_REFCLK_FREQUENCY=(iodelay_clk_freq)/1e6, p_PIPE_SEL="FALSE",
                          p_IDELAY_TYPE="VARIABLE", p_IDELAY_VALUE=0,
 
                          i_C=ClockSignal("pix1p25x"),
