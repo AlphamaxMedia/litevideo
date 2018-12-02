@@ -242,7 +242,7 @@ class S7PhaseDetector(Module, AutoCSR):
 
         # find transition
         mdata_d = Signal(8)
-        self.sync.pix1p25x += mdata_d.eq(self.mdata)
+        self.sync.pix1p25x_r += mdata_d.eq(self.mdata)
         self.comb += transition.eq(mdata_d != self.mdata)
 
 
@@ -290,7 +290,7 @@ class S7DataCapture(Module, AutoCSR):
         #  3 = enable bitslip controller
         #  4 = search again
         auto_ctl = Signal(self._auto_ctl.size)
-        self.submodules.sync_auto_ctl = BusSynchronizer(self._auto_ctl.size, "sys", "pix1p25x")
+        self.submodules.sync_auto_ctl = BusSynchronizer(self._auto_ctl.size, "sys", "pix1p25x_r")
         self.comb += [
             self.sync_auto_ctl.i.eq(self._auto_ctl.storage),
             auto_ctl.eq(self.sync_auto_ctl.o)
@@ -301,7 +301,7 @@ class S7DataCapture(Module, AutoCSR):
         # 1 = delay criteria mod on original
         # 2 = fully autonomous
         algo = Signal(2)
-        self.specials += MultiReg(self._algorithm.storage, algo, odomain="pix1p25x")
+        self.specials += MultiReg(self._algorithm.storage, algo, odomain="pix1p25x_r")
 
         bitslip = Signal()
         alg_bitslip=Signal()
@@ -350,7 +350,7 @@ class S7DataCapture(Module, AutoCSR):
                      p_REFCLK_FREQUENCY=iodelay_clk_freq / 1e6, p_PIPE_SEL="FALSE",
                      p_IDELAY_TYPE="VAR_LOAD", p_IDELAY_VALUE=0,
 
-                     i_C=ClockSignal("pix1p25x"),
+                     i_C=ClockSignal("pix1p25x_r"),
                      i_LD=alg_delay_rst,
                      i_CE=alg_delay_master_ce,
                      i_LDPIPEEN=0,
@@ -367,9 +367,9 @@ class S7DataCapture(Module, AutoCSR):
 
                      i_DDLY=serdes_m_i_delayed,
                      i_CE1=1,
-                     i_RST=ResetSignal("pix1p25x"),
+                     i_RST=ResetSignal("pix1p25x_r"),
                      i_CLK=ClockSignal("pix5x"), i_CLKB=~ClockSignal("pix5x"),
-                     i_CLKDIV=ClockSignal("pix1p25x"),
+                     i_CLKDIV=ClockSignal("pix1p25x_r"),
                      i_BITSLIP= alg_bitslip,
                      o_Q8=serdes_m_q[0], o_Q7=serdes_m_q[1],
                      o_Q6=serdes_m_q[2], o_Q5=serdes_m_q[3],
@@ -408,7 +408,7 @@ class S7DataCapture(Module, AutoCSR):
                      p_REFCLK_FREQUENCY=iodelay_clk_freq / 1e6, p_PIPE_SEL="FALSE",
                      p_IDELAY_TYPE="VAR_LOAD", p_IDELAY_VALUE=0,
 
-                     i_C=ClockSignal("pix1p25x"),
+                     i_C=ClockSignal("pix1p25x_r"),
                      i_LD=alg_delay_rst,
                      i_CE=alg_delay_slave_ce,
                      i_LDPIPEEN=0, i_INC=alg_delay_slave_inc,
@@ -424,9 +424,9 @@ class S7DataCapture(Module, AutoCSR):
 
                      i_DDLY=serdes_s_i_delayed,
                      i_CE1=1,
-                     i_RST=ResetSignal("pix1p25x"),
+                     i_RST=ResetSignal("pix1p25x_r"),
                      i_CLK=ClockSignal("pix5x"), i_CLKB=~ClockSignal("pix5x"),
-                     i_CLKDIV=ClockSignal("pix1p25x"),
+                     i_CLKDIV=ClockSignal("pix1p25x_r"),
                      i_BITSLIP=alg_bitslip,
                      o_Q8=serdes_s_q[0], o_Q7=serdes_s_q[1],
                      o_Q6=serdes_s_q[2], o_Q5=serdes_s_q[3],
@@ -465,7 +465,7 @@ class S7DataCapture(Module, AutoCSR):
 
 
         self._eye_bit_time=CSRStorage(5)
-        self.submodules.sync_eye_bit_time = BusSynchronizer(5, "sys", "pix1p25x")
+        self.submodules.sync_eye_bit_time = BusSynchronizer(5, "sys", "pix1p25x_r")
         eye_bit_time_sync=Signal(5)
         self.comb += [
             self.sync_eye_bit_time.i.eq(self._eye_bit_time.storage),
@@ -482,8 +482,8 @@ class S7DataCapture(Module, AutoCSR):
                          i_enable_phase_detector=auto_ctl[0],
                          i_enable_monitor=auto_ctl[1],
                          i_del_mech=auto_ctl[2],
-                         i_reset=ResetSignal("pix1p25x"),
-                         i_clk=ClockSignal("pix1p25x"),
+                         i_reset=ResetSignal("pix1p25x_r"),
+                         i_clk=ClockSignal("pix1p25x_r"),
                          o_m_delay_out=serdes_m_cntvalue_in,
                          o_s_delay_out=serdes_s_cntvalue_in,
                          o_data_out=alt_delay_data_out,
@@ -492,8 +492,8 @@ class S7DataCapture(Module, AutoCSR):
                          o_m_delay_1hot=delay_result,
                          )
             ]
-            self.submodules.sync_eye = BusSynchronizer(32, "pix1p25x", "sys")
-            self.submodules.sync_result = BusSynchronizer(32, "pix1p25x", "sys")
+            self.submodules.sync_eye = BusSynchronizer(32, "pix1p25x_r", "sys")
+            self.submodules.sync_result = BusSynchronizer(32, "pix1p25x_r", "sys")
             self.comb += [
                 self.sync_eye.i.eq(eye_result),
                 self._eye.status.eq(self.sync_eye.o),
@@ -505,20 +505,26 @@ class S7DataCapture(Module, AutoCSR):
             self.comb += [
                 self.do_search_again.i.eq(self._auto_ctl.re & self._auto_ctl.storage[4])
             ]
+            raw_bitslip = Signal()
             self.specials += [
                 Instance("phsaligner",
                          i_clk=ClockSignal("pix"),
                          i_rst=ResetSignal("pix"),
                          i_sdata=self.gearbox.o,
-                         o_bitslip=bitslip,
+                         o_bitslip=raw_bitslip,
                          i_search_again=self.do_search_again.o
-                         )
+                         ),
+            ]
+            self.submodules.bitslip_sync = PulseSynchronizer("pix", "pix1p25x_r") #### this could be a problem, need to test. Inserted to fix a timing closure issue but the extra latency could be a problem.
+            self.comb += [
+                self.bitslip_sync.i.eq(raw_bitslip),
+                bitslip.eq(self.bitslip_sync.o),
             ]
 
 
         # cntvalue sync
-        self.submodules.sync_mcntvalue = BusSynchronizer(5, "pix1p25x", "sys")
-        self.submodules.sync_scntvalue = BusSynchronizer(5, "pix1p25x", "sys")
+        self.submodules.sync_mcntvalue = BusSynchronizer(5, "pix1p25x_r", "sys")
+        self.submodules.sync_scntvalue = BusSynchronizer(5, "pix1p25x_r", "sys")
         self.comb += [
             self.sync_mcntvalue.i.eq(serdes_m_cntvalue),
             self._cntvalueout_m.status.eq(self.sync_mcntvalue.o),
@@ -527,7 +533,7 @@ class S7DataCapture(Module, AutoCSR):
         ]
 
         # phase detector
-        self.submodules.phase_detector = ClockDomainsRenamer("pix1p25x")(
+        self.submodules.phase_detector = ClockDomainsRenamer("pix1p25x_r")(
             S7PhaseDetector())
         self.comb += [
             self.phase_detector.mdata.eq(serdes_m_d),
@@ -543,7 +549,7 @@ class S7DataCapture(Module, AutoCSR):
             too_late.eq(lateness == (2**ntbits - 1)),
             too_early.eq(lateness == 0)
         ]
-        self.sync.pix1p25x += [
+        self.sync.pix1p25x_r += [
             If(reset_lateness,
                 lateness.eq(2**(ntbits - 1))
             ).Elif(~too_late & ~too_early,
@@ -557,18 +563,18 @@ class S7DataCapture(Module, AutoCSR):
             )
         ]
 
-        self.submodules.sync_lateness = BusSynchronizer(ntbits, "pix1p25x", "sys")
+        self.submodules.sync_lateness = BusSynchronizer(ntbits, "pix1p25x_r", "sys")
         self.comb += [
             self.sync_lateness.i.eq(lateness),
             self._lateness.status.eq(self.sync_lateness.o),
         ]
 
         # delay control
-        self.submodules.do_delay_rst = PulseSynchronizer("sys", "pix1p25x")
-        self.submodules.do_delay_master_inc = PulseSynchronizer("sys", "pix1p25x")
-        self.submodules.do_delay_master_dec = PulseSynchronizer("sys", "pix1p25x")
-        self.submodules.do_delay_slave_inc = PulseSynchronizer("sys", "pix1p25x")
-        self.submodules.do_delay_slave_dec = PulseSynchronizer("sys", "pix1p25x")
+        self.submodules.do_delay_rst = PulseSynchronizer("sys", "pix1p25x_r")
+        self.submodules.do_delay_master_inc = PulseSynchronizer("sys", "pix1p25x_r")
+        self.submodules.do_delay_master_dec = PulseSynchronizer("sys", "pix1p25x_r")
+        self.submodules.do_delay_slave_inc = PulseSynchronizer("sys", "pix1p25x_r")
+        self.submodules.do_delay_slave_dec = PulseSynchronizer("sys", "pix1p25x_r")
         self.comb += [
             delay_rst.eq(self.do_delay_rst.o),
             delay_master_inc.eq(self.do_delay_master_inc.o),
@@ -587,7 +593,7 @@ class S7DataCapture(Module, AutoCSR):
 
         # phase detector control
         self.specials += MultiReg(Cat(too_late, too_early, self.phase_detector.unsure), self._phase.status)
-        self.submodules.do_reset_lateness = PulseSynchronizer("sys", "pix1p25x")
+        self.submodules.do_reset_lateness = PulseSynchronizer("sys", "pix1p25x_r")
         self.comb += [
             reset_lateness.eq(self.do_reset_lateness.o),
             self.do_reset_lateness.i.eq(self._phase_reset.re)
