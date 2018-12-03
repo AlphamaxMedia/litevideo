@@ -267,7 +267,7 @@ class S7DataCapture(Module, AutoCSR):
         self._algorithm = CSRStorage(2)
         self._eye = CSRStatus(32)
         self._monitor = CSRStatus(32)
-        self._auto_ctl = CSRStorage(5)
+        self._auto_ctl = CSRStorage(6)
 
         # # #
 
@@ -289,7 +289,8 @@ class S7DataCapture(Module, AutoCSR):
         #  2 = delay_mech select
         #  3 = enable bitslip controller
         #  4 = search again
-        auto_ctl = Signal(self._auto_ctl.size)
+        #  5 = bypass secondary charsync
+        self.auto_ctl = auto_ctl = Signal(self._auto_ctl.size)
         self.submodules.sync_auto_ctl = BusSynchronizer(self._auto_ctl.size, "sys", "pix1p25x_r")
         self.comb += [
             self.sync_auto_ctl.i.eq(self._auto_ctl.storage),
@@ -506,13 +507,15 @@ class S7DataCapture(Module, AutoCSR):
                 self.do_search_again.i.eq(self._auto_ctl.re & self._auto_ctl.storage[4])
             ]
             raw_bitslip = Signal()
+            self.phsaligned = Signal()
             self.specials += [
                 Instance("phsaligner",
                          i_clk=ClockSignal("pix"),
                          i_rst=ResetSignal("pix"),
                          i_sdata=self.gearbox.o,
                          o_bitslip=raw_bitslip,
-                         i_search_again=self.do_search_again.o
+                         i_search_again=self.do_search_again.o,
+                         o_psaligned=self.phsaligned,
                          ),
             ]
             self.submodules.bitslip_sync = PulseSynchronizer("pix", "pix1p25x_r") #### this could be a problem, need to test. Inserted to fix a timing closure issue but the extra latency could be a problem.

@@ -64,15 +64,29 @@ class HDMIIn(Module, AutoCSR):
             setattr(self.submodules, name + "_charsync", charsync)
             self.comb += charsync.raw_data.eq(cap.d)
 
+            auto_mode = Signal()
+            self.sync.pix += auto_mode.eq(cap.auto_ctl[5])
+
             wer = WER()
             setattr(self.submodules, name + "_wer", wer)
-            self.comb += wer.data.eq(charsync.data)
+            self.comb += [
+               If(auto_mode,
+                  wer.data.eq(cap.d)
+               ).Else(
+                   wer.data.eq(charsync.data)
+               )
+            ]
 
             decoding = Decoding()
             setattr(self.submodules, name + "_decod", decoding)
             self.comb += [
-                decoding.valid_i.eq(charsync.synced),
-                decoding.input.eq(charsync.data)
+                If(auto_mode,
+                   decoding.valid_i.eq(cap.phsaligned),
+                   decoding.input.eq(cap.d)
+                ).Else(
+                  decoding.valid_i.eq(charsync.synced),
+                  decoding.input.eq(charsync.data)
+                )
             ]
 
         self.submodules.chansync = ChanSync()
