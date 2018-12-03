@@ -35,7 +35,7 @@ class S7HDMIOutEncoderSerializer(Module):
         # OSERDESE2 master
         self.specials += [
             Instance("OSERDESE2",
-                p_DATA_WIDTH=10, p_TRISTATE_WIDTH=1,
+                p_DATA_WIDTH=10, p_TRISTATE_WIDTH=4,
                 p_DATA_RATE_OQ="DDR", p_DATA_RATE_TQ="DDR",
                 p_SERDES_MODE="MASTER",
 
@@ -53,7 +53,7 @@ class S7HDMIOutEncoderSerializer(Module):
                 #o_SHIFTOUT1=, o_SHIFTOUT2=,
             ),
             Instance("OSERDESE2",
-                p_DATA_WIDTH=10, p_TRISTATE_WIDTH=1,
+                p_DATA_WIDTH=10, p_TRISTATE_WIDTH=4,
                 p_DATA_RATE_OQ="DDR", p_DATA_RATE_TQ="DDR",
                 p_SERDES_MODE="SLAVE",
 
