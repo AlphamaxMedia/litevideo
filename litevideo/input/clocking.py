@@ -133,7 +133,7 @@ class S7Clocking(Module, AutoCSR):
 
         self.specials += [
             Instance("MMCME2_ADV",
-                p_BANDWIDTH="LOW", i_RST=self._mmcm_reset.storage, o_LOCKED=mmcm_locked,
+                p_BANDWIDTH="HIGH", i_RST=self._mmcm_reset.storage, o_LOCKED=mmcm_locked, # HIGH emperically better than LOW setting
 
                 # VCO
                 p_REF_JITTER1=0.01, p_CLKIN1_PERIOD=6.734,
