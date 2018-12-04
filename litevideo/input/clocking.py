@@ -129,8 +129,6 @@ class S7Clocking(Module, AutoCSR):
         mmcm_drdy = Signal()
         mmcm_fb_o = Signal() # this should be harmless in single domain, but essential for split
 
-        mmcm_clk0_mirror = Signal()
-
         self.specials += [
             Instance("MMCME2_ADV",
                 p_BANDWIDTH="OPTIMIZED", i_RST=self._mmcm_reset.storage, o_LOCKED=mmcm_locked, # HIGH emperically better than LOW setting
