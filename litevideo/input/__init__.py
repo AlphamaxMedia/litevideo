@@ -89,6 +89,64 @@ class HDMIIn(Module, AutoCSR):
                 )
             ]
 
+
+        data0_bonded = Signal(10)
+        data1_bonded = Signal(10)
+        data2_bonded = Signal(10)
+        data0_iamrdy = Signal()
+        data1_iamrdy = Signal()
+        data2_iamrdy = Signal()
+        all_rdy = Signal()
+        self.use_alt_bond = use_alt_bond = Signal()
+        self.comb += use_alt_bond.eq(self.data0_cap.auto_ctl[6])
+        self.specials += [
+            Instance("chnlbond",
+                 i_clk=ClockSignal("pix"),
+                 i_rawdata=self.data0_cap.d,
+                 i_iamvld=self.data0_cap.phsaligned,
+                 i_other_ch0_vld=self.data1_cap.phsaligned,
+                 i_other_ch0_rdy=data1_iamrdy,
+                 i_other_ch1_vld=self.data2_cap.phsaligned,
+                 i_other_ch1_rdy=data2_iamrdy,
+                 o_iamrdy=data0_iamrdy,
+                 o_sdata=data0_bonded,
+                 ),
+            Instance("chnlbond",
+                 i_clk=ClockSignal("pix"),
+                 i_rawdata=self.data1_cap.d,
+                 i_iamvld=self.data1_cap.phsaligned,
+                 i_other_ch0_vld=self.data0_cap.phsaligned,
+                 i_other_ch0_rdy=data0_iamrdy,
+                 i_other_ch1_vld=self.data2_cap.phsaligned,
+                 i_other_ch1_rdy=data2_iamrdy,
+                 o_iamrdy=data1_iamrdy,
+                 o_sdata=data1_bonded,
+                 ),
+            Instance("chnlbond",
+                 i_clk=ClockSignal("pix"),
+                 i_rawdata=self.data2_cap.d,
+                 i_iamvld=self.data2_cap.phsaligned,
+                 i_other_ch0_vld=self.data1_cap.phsaligned,
+                 i_other_ch0_rdy=data1_iamrdy,
+                 i_other_ch1_vld=self.data0_cap.phsaligned,
+                 i_other_ch1_rdy=data0_iamrdy,
+                 o_iamrdy=data2_iamrdy,
+                 o_sdata=data2_bonded,
+                 ),
+        ]
+        self.comb += all_rdy.eq(data0_iamrdy & data1_iamrdy & data2_iamrdy)
+        self.submodules.auto0_decoding = Decoding()
+        self.submodules.auto1_decoding = Decoding()
+        self.submodules.auto2_decoding = Decoding()
+        self.comb += [
+            self.auto0_decoding.valid_i.eq(data0_iamrdy),
+            self.auto1_decoding.valid_i.eq(data1_iamrdy),
+            self.auto2_decoding.valid_i.eq(data2_iamrdy),
+            self.auto0_decoding.input.eq(data0_bonded),
+            self.auto1_decoding.input.eq(data1_bonded),
+            self.auto2_decoding.input.eq(data2_bonded)
+        ]
+
         self.submodules.chansync = ChanSync()
         self.comb += [
             self.chansync.valid_i.eq(self.data0_decod.valid_o &
@@ -103,10 +161,17 @@ class HDMIIn(Module, AutoCSR):
             decode_terc4 = DecodeTERC4()
             self.submodules.decode_terc4 = ClockDomainsRenamer("pix")(decode_terc4) # rename so state machine is in pix domain, not default sys domain
             self.comb += [
-                self.decode_terc4.valid_i.eq(self.chansync.chan_synced),
-                self.decode_terc4.data_in0.eq(self.chansync.data_out0),
-                self.decode_terc4.data_in1.eq(self.chansync.data_out1),
-                self.decode_terc4.data_in2.eq(self.chansync.data_out2),
+                If(use_alt_bond,
+                   self.decode_terc4.valid_i.eq(all_rdy),
+                   self.decode_terc4.data_in0.eq(self.auto0_decoding.output),
+                   self.decode_terc4.data_in1.eq(self.auto1_decoding.output),
+                   self.decode_terc4.data_in2.eq(self.auto2_decoding.output),
+                ).Else(
+                    self.decode_terc4.valid_i.eq(self.chansync.chan_synced),
+                    self.decode_terc4.data_in0.eq(self.chansync.data_out0),
+                    self.decode_terc4.data_in1.eq(self.chansync.data_out1),
+                    self.decode_terc4.data_in2.eq(self.chansync.data_out2),
+                )
             ]
 
             self.submodules.syncpol = SyncPolarity(hdmi, split_mmcm)
@@ -125,15 +190,25 @@ class HDMIIn(Module, AutoCSR):
             self.submodules.data2_timingdelay = TimingDelayChannel(1)
 
             self.comb += [
-                self.data0_timingdelay.sink.eq(self.chansync.data_out0),
-                self.data1_timingdelay.sink.eq(self.chansync.data_out1),
-                self.data2_timingdelay.sink.eq(self.chansync.data_out2),
+                If(use_alt_bond,
+                   self.data0_timingdelay.sink.eq(self.auto0_decoding.output),
+                   self.data1_timingdelay.sink.eq(self.auto1_decoding.output),
+                   self.data2_timingdelay.sink.eq(self.auto2_decoding.output),
+                ).Else(
+                    self.data0_timingdelay.sink.eq(self.chansync.data_out0),
+                    self.data1_timingdelay.sink.eq(self.chansync.data_out1),
+                    self.data2_timingdelay.sink.eq(self.chansync.data_out2),
+                )
             ]
             self.comb += [
                 self.syncpol.data_in0.eq(self.data0_timingdelay.source),
                 self.syncpol.data_in1.eq(self.data1_timingdelay.source),
                 self.syncpol.data_in2.eq(self.data2_timingdelay.source),
-                self.syncpol.valid_i.eq(self.chansync.chan_synced)  # OK not to delay because it's a "once in a blue moon" transition that sorts itself out on the next VSYNC
+                If(use_alt_bond,
+                   self.syncpol.valid_i.eq(all_rdy)
+                ).Else(
+                   self.syncpol.valid_i.eq(self.chansync.chan_synced)  # OK not to delay because it's a "once in a blue moon" transition that sorts itself out on the next VSYNC
+                )
             ]
 
         else:

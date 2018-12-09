@@ -267,7 +267,7 @@ class S7DataCapture(Module, AutoCSR):
         self._algorithm = CSRStorage(2)
         self._eye = CSRStatus(32)
         self._monitor = CSRStatus(32)
-        self._auto_ctl = CSRStorage(6)
+        self._auto_ctl = CSRStorage(7)
 
         # # #
 
@@ -290,6 +290,7 @@ class S7DataCapture(Module, AutoCSR):
         #  3 = enable bitslip controller
         #  4 = search again
         #  5 = bypass secondary charsync
+        #  6 = use alternate bonder (only channel 0 used)
         self.auto_ctl = auto_ctl = Signal(self._auto_ctl.size)
         self.submodules.sync_auto_ctl = BusSynchronizer(self._auto_ctl.size, "sys", "pix1p25x_r")
         self.comb += [
