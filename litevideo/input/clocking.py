@@ -90,6 +90,7 @@ class S7Clocking(Module, AutoCSR):
     def __init__(self, pads, clkin_freq=148.5e6, split_clocking=False):
         self._mmcm_reset = CSRStorage(reset=1)
         self._locked = CSRStatus()
+        self._searchreset = CSRStorage()
 
         # DRP
         self._mmcm_read = CSR()
@@ -216,9 +217,9 @@ class S7Clocking(Module, AutoCSR):
         self.comb += self._locked.status.eq(self.locked)
 
         self.specials += [
-            AsyncResetSynchronizer(self.cd_pix, ~mmcm_locked),
-            AsyncResetSynchronizer(self.cd_pix1p25x, ~mmcm_locked),
-            AsyncResetSynchronizer(self.cd_pix1p25x_r, ~mmcm_locked),
+            AsyncResetSynchronizer(self.cd_pix, ~mmcm_locked | self._searchreset.storage),
+            AsyncResetSynchronizer(self.cd_pix1p25x, ~mmcm_locked | self._searchreset.storage),
+            AsyncResetSynchronizer(self.cd_pix1p25x_r, ~mmcm_locked | self._searchreset.storage),
         ]
 
         if split_clocking:

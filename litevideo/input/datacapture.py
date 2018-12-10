@@ -4,7 +4,7 @@ from migen.genlib.misc import WaitTimer
 from migen.genlib.cdc import MultiReg, Gearbox
 
 from litex.soc.interconnect.csr import *
-
+from migen.genlib.resetsync import AsyncResetSynchronizer
 
 class S6DataCapture(Module, AutoCSR):
     def __init__(self, pad_p, pad_n, ntbits=8):
@@ -268,7 +268,6 @@ class S7DataCapture(Module, AutoCSR):
         self._eye = CSRStatus(32)
         self._monitor = CSRStatus(32)
         self._auto_ctl = CSRStorage(7)
-        self._searchreset = CSRStorage(1)
 
         # # #
 
@@ -289,7 +288,7 @@ class S7DataCapture(Module, AutoCSR):
         #  1 = enable_monitor
         #  2 = delay_mech select
         #  3 = enable bitslip controller
-        #  4 = unused (moved to _searchreset)
+        #  4 = unused
         #  5 = bypass secondary charsync
         #  6 = use alternate bonder (only channel 0 used)
         self.auto_ctl = auto_ctl = Signal(self._auto_ctl.size)
@@ -505,10 +504,6 @@ class S7DataCapture(Module, AutoCSR):
                 self._monitor.status.eq(self.sync_result.o),
             ]
 
-            self.submodules.do_search_again = PulseSynchronizer("sys", "pix")
-            self.comb += [
-                self.do_search_again.i.eq(self._searchreset.re)
-            ]
             raw_bitslip = Signal()
             self.phsaligned = Signal()
             self.specials += [
@@ -517,7 +512,6 @@ class S7DataCapture(Module, AutoCSR):
                          i_rst=ResetSignal("pix"),
                          i_sdata=self.gearbox.o,
                          o_bitslip=raw_bitslip,
-                         i_search_again=self.do_search_again.o,
                          o_psaligned=self.phsaligned,
                          ),
             ]
