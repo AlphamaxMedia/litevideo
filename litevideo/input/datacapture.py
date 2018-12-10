@@ -268,6 +268,7 @@ class S7DataCapture(Module, AutoCSR):
         self._eye = CSRStatus(32)
         self._monitor = CSRStatus(32)
         self._auto_ctl = CSRStorage(7)
+        self._searchreset = CSRStorage(1)
 
         # # #
 
@@ -288,7 +289,7 @@ class S7DataCapture(Module, AutoCSR):
         #  1 = enable_monitor
         #  2 = delay_mech select
         #  3 = enable bitslip controller
-        #  4 = search again
+        #  4 = unused (moved to _searchreset)
         #  5 = bypass secondary charsync
         #  6 = use alternate bonder (only channel 0 used)
         self.auto_ctl = auto_ctl = Signal(self._auto_ctl.size)
@@ -505,7 +506,7 @@ class S7DataCapture(Module, AutoCSR):
 
             self.submodules.do_search_again = PulseSynchronizer("sys", "pix")
             self.comb += [
-                self.do_search_again.i.eq(self._auto_ctl.re & self._auto_ctl.storage[4])
+                self.do_search_again.i.eq(self._searchreset.re)
             ]
             raw_bitslip = Signal()
             self.phsaligned = Signal()
