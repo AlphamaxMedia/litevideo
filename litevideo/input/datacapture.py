@@ -491,6 +491,7 @@ class S7DataCapture(Module, AutoCSR):
                          o_s_delay_out=serdes_s_cntvalue_in,
                          o_data_out=alt_delay_data_out,
                          i_bt_val=eye_bit_time_sync,
+                         i_c_delay_in=eye_bit_time_sync[1:],  # eye_bit_time_sync // 2
                          o_results=eye_result,
                          o_m_delay_1hot=delay_result,
                          )
@@ -520,7 +521,7 @@ class S7DataCapture(Module, AutoCSR):
                          o_psaligned=self.phsaligned,
                          ),
             ]
-            self.submodules.bitslip_sync = PulseSynchronizer("pix", "pix1p25x_r") #### this could be a problem, need to test. Inserted to fix a timing closure issue but the extra latency could be a problem.
+            self.submodules.bitslip_sync = PulseSynchronizer("pix", "pix1p25x_r")
             self.comb += [
                 self.bitslip_sync.i.eq(raw_bitslip),
                 bitslip.eq(self.bitslip_sync.o),
