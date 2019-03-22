@@ -1,5 +1,5 @@
 from migen import *
-from migen.genlib.cdc import MultiReg, PulseSynchronizer
+from migen.genlib.cdc import MultiReg, PulseSynchronizer, BusSynchronizer
 
 from litex.soc.interconnect import stream
 from litex.soc.interconnect.csr import *
@@ -57,7 +57,9 @@ class DMAReader(Module, AutoCSR):
         length = Signal(dram_port.aw)
         offset = Signal(dram_port.aw)
         self.delay_base = CSRStorage(32)
+        delay_base = Signal(32)
         self.line_skip = CSRStorage(32)
+        line_skip = Signal(32)
         self.hres_out = CSRStorage(16)
         self.vres_out = CSRStorage(16)
         self.comb += [
@@ -72,6 +74,34 @@ class DMAReader(Module, AutoCSR):
         ]
         hcount = Signal(16)
         vcount = Signal(16)
+        self.field = Signal()
+        vsyncpos = Signal(16)
+        even_loc = Signal(16)
+        odd_loc = Signal(16)
+        self.even_pos = CSRStatus(16)
+        self.odd_pos = CSRStatus(16)
+        self.comb += [
+            self.even_pos.status.eq(even_loc),
+            self.odd_pos.status.eq(odd_loc),
+        ]
+        self.field_pos = CSRStorage(16)
+        self.interlace = CSRStorage(2)  # bit 0 is enable, bit 1 is even/odd priority
+        field_pos = Signal(16)
+        interlace = Signal(2)
+        self.submodules.sync_field_pos = BusSynchronizer(self.field_pos.size, "sys", "pix_o")
+        self.submodules.sync_interlace = BusSynchronizer(self.interlace.size, "sys", "pix_o")
+        self.submodules.sync_delay_base = BusSynchronizer(self.delay_base.size, "sys", "pix_o")
+        self.submodules.sync_line_skip = BusSynchronizer(self.line_skip.size, "sys", "pix_o")
+        self.comb += [
+            self.sync_field_pos.i.eq(self.field_pos.storage),
+            self.sync_interlace.i.eq(self.interlace.storage),
+            self.sync_delay_base.i.eq(self.delay_base.storage),
+            self.sync_line_skip.i.eq(self.line_skip.storage),
+            field_pos.eq(self.sync_field_pos.o),
+            interlace.eq(self.sync_interlace.o),
+            delay_base.eq(self.sync_delay_base.o),
+            line_skip.eq(self.sync_line_skip.o),
+        ]
 
         if genlock_stream != None:
             self.v = Signal()
@@ -89,6 +119,21 @@ class DMAReader(Module, AutoCSR):
                 self.h.eq(genlock_stream.hsync),
                 self.h_r.eq(self.h),
                 self.sol.eq(self.h & ~self.h_r),
+            ]
+            self.sync += [
+                If(self.sol,
+                   vsyncpos.eq(0)
+                ).Else(
+                   vsyncpos.eq(vsyncpos + 1)
+                ),
+                If(self.sof,
+                   self.field.eq(~self.field),
+                   If(self.field,
+                         odd_loc.eq(vsyncpos),
+                    ).Else(
+                         even_loc.eq(vsyncpos),
+                    ),
+                ),
             ]
 
         if genlock_stream == None:
@@ -112,9 +157,23 @@ class DMAReader(Module, AutoCSR):
             )
         else:
             fsm.act("IDLE",
-                NextValue(offset, self.delay_base.storage),
-                NextValue(hcount, 0),
-                NextValue(vcount, 0),
+                If( self.interlace.storage[0],
+                    # interlace
+                    If( (vsyncpos > field_pos) ^ interlace[1],
+                        NextValue(offset, delay_base),
+                        NextValue(hcount, 0),
+                        NextValue(vcount, 0),
+                    ).Else(
+                        NextValue(offset, delay_base + hres + 1),
+                        NextValue(hcount, 0),
+                        NextValue(vcount, 1),
+                    )
+                ).Else(
+                    # non-interlace
+                    NextValue(offset, delay_base),
+                    NextValue(hcount, 0),
+                    NextValue(vcount, 0),
+                ),
                 If(sink.valid,  # if our parameters are valid, start reading
                        NextState("READ")
                     ).Else(
@@ -126,9 +185,17 @@ class DMAReader(Module, AutoCSR):
                 If(self.dma.sink.ready, # if the LiteDRAMDMAReader shows it's ready for an address (e.g. taken the current address)
                     NextValue(hcount, hcount + 1),
                     If(hcount >= hres,
-                      NextValue(offset, offset + self.line_skip.storage + 1),
-                      NextValue(hcount, 0),
-                      NextValue(vcount, vcount + 1),
+                      If( interlace[0],
+                          # interlaced
+                          NextValue(offset, offset + line_skip + 1 + hres + 1),
+                          NextValue(hcount, 0),
+                          NextValue(vcount, vcount + 2),
+                      ).Else(
+                          # not interlaced
+                          NextValue(offset, offset + line_skip + 1),
+                          NextValue(hcount, 0),
+                          NextValue(vcount, vcount + 1),
+                      )
                     ).Else(
                       NextValue(offset, offset + 1), # increment the offset
                     ),
