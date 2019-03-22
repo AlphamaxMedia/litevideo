@@ -57,10 +57,21 @@ class DMAReader(Module, AutoCSR):
         length = Signal(dram_port.aw)
         offset = Signal(dram_port.aw)
         self.delay_base = CSRStorage(32)
+        self.line_skip = CSRStorage(32)
+        self.hres_out = CSRStorage(16)
+        self.vres_out = CSRStorage(16)
         self.comb += [
             base.eq(sink.base[shift:]),   # ignore the lower bits of the base + length to match the DMA's expectations
             length.eq(sink.length[shift:]), # need to noodle on what that expectation is, exactly...
         ]
+        hres = Signal(16)
+        vres = Signal(16)
+        self.comb += [
+            hres.eq(self.hres_out.storage),
+            vres.eq(self.vres_out.storage),
+        ]
+        hcount = Signal(16)
+        vcount = Signal(16)
 
         if genlock_stream != None:
             self.v = Signal()
@@ -70,6 +81,14 @@ class DMAReader(Module, AutoCSR):
                 self.v.eq(genlock_stream.vsync),
                 self.v_r.eq(self.v),
                 self.sof.eq(self.v & ~self.v_r),
+            ]
+            self.h = Signal()
+            self.h_r = Signal()
+            self.sol = Signal()
+            self.sync += [
+                self.h.eq(genlock_stream.hsync),
+                self.h_r.eq(self.h),
+                self.sol.eq(self.h & ~self.h_r),
             ]
 
         if genlock_stream == None:
@@ -94,6 +113,8 @@ class DMAReader(Module, AutoCSR):
         else:
             fsm.act("IDLE",
                 NextValue(offset, self.delay_base.storage),
+                NextValue(hcount, 0),
+                NextValue(vcount, 0),
                 If(sink.valid,  # if our parameters are valid, start reading
                        NextState("READ")
                     ).Else(
@@ -103,8 +124,15 @@ class DMAReader(Module, AutoCSR):
             fsm.act("READ",
                 self.dma.sink.valid.eq(1),  # tell the DMA reader that we've got a valid address for it
                 If(self.dma.sink.ready, # if the LiteDRAMDMAReader shows it's ready for an address (e.g. taken the current address)
-                    NextValue(offset, offset + 1), # increment the offset
-                    If(offset == (length - 1),  # at the end...
+                    NextValue(hcount, hcount + 1),
+                    If(hcount >= hres,
+                      NextValue(offset, offset + self.line_skip.storage + 1),
+                      NextValue(hcount, 0),
+                      NextValue(vcount, vcount + 1),
+                    ).Else(
+                      NextValue(offset, offset + 1), # increment the offset
+                    ),
+                    If( (offset >= (length - 1)) | vcount >= vres,  # at the end...
                         self.sink.ready.eq(1),  # indicate we're ready for more parameters
                         NextState("WAIT_SOF")
                     )
