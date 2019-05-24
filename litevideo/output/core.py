@@ -159,8 +159,8 @@ class DMAReader(Module, AutoCSR):
             fsm.act("IDLE",
                 If( self.interlace.storage[0],
                     # interlace
-                    If( (vsyncpos > field_pos) ^ interlace[1],
-                        NextValue(offset, delay_base),
+                    If(self.field ^ interlace[1] ^ (odd_loc < vsyncpos), # xor against actual odd_loc vs vsyncpos in case we caught the wrong field polarity
+                       NextValue(offset, delay_base),
                         NextValue(hcount, 0),
                         NextValue(vcount, 0),
                     ).Else(
