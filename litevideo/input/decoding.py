@@ -5,6 +5,7 @@ from migen.genlib.cdc import MultiReg
 from litevideo.input.common import control_tokens, channel_layout
 from litex.soc.interconnect import stream
 from litex.soc.interconnect.csr import *
+from litex.soc.interconnect.csr_eventmanager import *
 
 data_gb_tokens = [0b0100110011]
 
@@ -208,6 +209,24 @@ class DecodeTERC4(Module, AutoCSR):
             )
         ]
 
+        self.t4d_bch0 = CSRStatus(64)
+        self.t4d_bch1 = CSRStatus(64)
+        self.t4d_bch2 = CSRStatus(64)
+        self.t4d_bch3 = CSRStatus(64)
+        self.t4d_bch4 = CSRStatus(32)
+        self.submodules.ev = EventManager()
+        self.ev.t4packet = EventSourcePulse()  # rising edge triggered event
+        self.ev.t4island = EventSourcePulse()  # rising edge triggered event
+        self.ev.finalize()
+        t4d_char = Signal(8)  # number of characters seen
+        t4d_count = Signal(8) # numbef of successive packets in the current island
+        self.t4d_char = CSRStatus(8)
+        self.t4d_count = CSRStatus(8)
+        self.comb += [
+            self.t4d_char.status.eq(t4d_char),
+            self.t4d_count.status.eq(t4d_count),
+        ]
+
         # derive video, data guardbands and control codes
         for datan in range(3):
             name = "data" + str(datan)
@@ -271,7 +290,14 @@ class DecodeTERC4(Module, AutoCSR):
                 self.encoding_terc4.eq(1),
                 self.encrypting_data.eq(0),
                 self.encrypting_video.eq(0),
-                self.de_hdmi.eq(0)
+                self.de_hdmi.eq(0),
+                NextValue(self.t4d_bch0.status, 0),
+                NextValue(self.t4d_bch1.status, 0),
+                NextValue(self.t4d_bch2.status, 0),
+                NextValue(self.t4d_bch3.status, 0),
+                NextValue(self.t4d_bch4.status, 0),
+                NextValue(t4d_char, 0),
+                NextValue(t4d_count, 0),
                 )
         fsm.act("TERC4",
                 If(any_cvalid,
@@ -286,7 +312,19 @@ class DecodeTERC4(Module, AutoCSR):
                 self.encoding_terc4.eq(1),
                 self.encrypting_data.eq(1),
                 self.encrypting_video.eq(0),
-                self.de_hdmi.eq(0)
+                self.de_hdmi.eq(0),
+                NextValue(self.t4d_bch0.status, Cat(self.t4d_bch0.status[2:],self.data1_dect4.decval.d[0], self.data2_dect4.decval.d[0])),
+                NextValue(self.t4d_bch1.status, Cat(self.t4d_bch1.status[2:],self.data1_dect4.decval.d[1], self.data2_dect4.decval.d[1])),
+                NextValue(self.t4d_bch2.status, Cat(self.t4d_bch2.status[2:],self.data1_dect4.decval.d[2], self.data2_dect4.decval.d[2])),
+                NextValue(self.t4d_bch3.status, Cat(self.t4d_bch3.status[2:],self.data1_dect4.decval.d[3], self.data2_dect4.decval.d[3])),
+                NextValue(self.t4d_bch4.status, Cat(self.t4d_bch4.status[1:],self.data0_dect4.decval.d[2])),
+                If(t4d_char == 31,
+                   NextValue(t4d_char, 0),
+                   NextValue(t4d_count, t4d_count + 1),
+                   self.ev.t4packet.trigger.eq(1), # trigger terc4 interrupt
+                ).Else(
+                   NextValue(t4d_char, t4d_char + 1),
+                )
                 )
         fsm.act("LEAVE_T4",
                 If(c2c1_dgb,
@@ -297,7 +335,8 @@ class DecodeTERC4(Module, AutoCSR):
                 self.encoding_terc4.eq(1),
                 self.encrypting_data.eq(0),
                 self.encrypting_video.eq(0),
-                self.de_hdmi.eq(0)
+                self.de_hdmi.eq(0),
+                self.ev.t4island.trigger.eq(1),  # trigger terc4 interrupt
                 )
         fsm.act("PREAM_VID",
                 If(self.ctl_code == 0b0001,

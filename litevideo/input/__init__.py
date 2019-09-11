@@ -243,5 +243,7 @@ class HDMIIn(Module, AutoCSR):
             self.submodules.dma = DMA(dram_port, n_dma_slots)
             self.comb += self.frame.frame.connect(self.dma.frame)
             self.ev = self.dma.ev
+        else:
+            self.ev = decode_terc4.ev   # hdmi in0 (rx passthrough path) can decode terc4 packets and generate interrupts when they arrive
 
     autocsr_exclude = {"ev"}
