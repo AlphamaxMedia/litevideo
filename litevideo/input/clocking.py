@@ -118,6 +118,8 @@ class S7Clocking(Module, AutoCSR):
 
         assert clkin_freq in [74.25e6, 148.5e6]
         self.clk_input = Signal()
+        self.clock_domains.cd_pix_raw = ClockDomain()
+        self.comb += self.cd_pix_raw.clk.eq(self.clk_input)
         clk_input_bufr = Signal()
 
         self.specials += Instance("IBUFDS", name="hdmi_in_ibufds", i_I=pads.clk_p, i_IB=pads.clk_n, o_O=self.clk_input)
