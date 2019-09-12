@@ -232,7 +232,7 @@ class HDMIIn(Module, AutoCSR):
             self.submodules.frame = FrameExtraction(dram_port.dw, fifo_depth, mode)
             self.comb += [
                 self.frame.valid_i.eq(self.syncpol.valid_o),
-                self.frame.de.eq(self.syncpol.de),
+                self.frame.de.eq(self.syncpol.de_int),
                 self.frame.vsync.eq(self.syncpol.vsync),
                 self.frame.r.eq(self.syncpol.r),
                 self.frame.g.eq(self.syncpol.g),
