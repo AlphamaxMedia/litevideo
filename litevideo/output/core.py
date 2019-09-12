@@ -58,6 +58,8 @@ class DMAReader(Module, AutoCSR):
         offset = Signal(dram_port.aw)
         self.delay_base = CSRStorage(32)
         delay_base = Signal(32)
+        self.line_align = CSRStorage(16)
+        line_align = Signal(16)
         self.line_skip = CSRStorage(32)
         line_skip = Signal(32)
         self.hres_out = CSRStorage(16)
@@ -74,6 +76,7 @@ class DMAReader(Module, AutoCSR):
         ]
         hcount = Signal(16)
         vcount = Signal(16)
+        linecount = Signal(16)
         self.field = Signal()
         vsyncpos = Signal(16)
         even_loc = Signal(16)
@@ -92,16 +95,20 @@ class DMAReader(Module, AutoCSR):
         self.submodules.sync_interlace = BusSynchronizer(self.interlace.size, "sys", "pix_o")
         self.submodules.sync_delay_base = BusSynchronizer(self.delay_base.size, "sys", "pix_o")
         self.submodules.sync_line_skip = BusSynchronizer(self.line_skip.size, "sys", "pix_o")
+        self.submodules.sync_line_align = BusSynchronizer(self.line_align.size, "sys", "pix_o")
         self.comb += [
             self.sync_field_pos.i.eq(self.field_pos.storage),
             self.sync_interlace.i.eq(self.interlace.storage),
             self.sync_delay_base.i.eq(self.delay_base.storage),
             self.sync_line_skip.i.eq(self.line_skip.storage),
+            self.sync_line_align.i.eq(self.line_align.storage),
             field_pos.eq(self.sync_field_pos.o),
             interlace.eq(self.sync_interlace.o),
             delay_base.eq(self.sync_delay_base.o),
             line_skip.eq(self.sync_line_skip.o),
+            line_align.eq(self.sync_line_align.o),
         ]
+        squash = Signal()
 
         if genlock_stream != None:
             self.v = Signal()
@@ -157,6 +164,7 @@ class DMAReader(Module, AutoCSR):
             )
         else:
             fsm.act("IDLE",
+                NextValue(linecount, 0),
                 If( self.interlace.storage[0],
                     # interlace
                     If(self.field ^ interlace[1] ^ (odd_loc < vsyncpos), # xor against actual odd_loc vs vsyncpos in case we caught the wrong field polarity
@@ -175,11 +183,26 @@ class DMAReader(Module, AutoCSR):
                     NextValue(vcount, 0),
                 ),
                 If(sink.valid,  # if our parameters are valid, start reading
-                       NextState("READ")
-                    ).Else(
+                   If(line_align == 0,
+                      NextState("READ"),
+                    ).Else (
+                      NextState("WAIT_LINE"),
+                   )
+                ).Else(
                         dram_port.flush.eq(1),
-                    )
                 )
+            )
+            fsm.act("WAIT_LINE", # insert dummy waits until wait_line is done
+                squash.eq(1),
+                self.dma.sink.valid.eq(1),  # tell the DMA reader that we've got a valid address for it
+                If(self.dma.sink.ready, # if the LiteDRAMDMAReader shows it's ready for an address (e.g. taken the current address)
+                   If(linecount < line_align,
+                      NextValue(linecount, linecount + 1),
+                   ).Else(
+                     NextState("READ"),
+                   )
+                )
+            )
             fsm.act("READ",
                 self.dma.sink.valid.eq(1),  # tell the DMA reader that we've got a valid address for it
                 If(self.dma.sink.ready, # if the LiteDRAMDMAReader shows it's ready for an address (e.g. taken the current address)
