@@ -85,7 +85,7 @@ class DMA(Module):
         reset_words = Signal()
         count_word = Signal()
         last_word = Signal()
-        current_address = Signal(bus_aw)
+        self.current_address = current_address = Signal(bus_aw)
         mwords_remaining = Signal(bus_aw)
         self.comb += [
             self._slot_array.address_reached.eq(current_address),
